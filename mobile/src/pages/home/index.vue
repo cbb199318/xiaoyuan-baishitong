@@ -54,6 +54,10 @@ const openPlaceholder = (item) => {
     uni.navigateTo({ url: '/pages/errand/index?tab=square' })
     return
   }
+  if (item.title === '找搭子') {
+    uni.navigateTo({ url: '/pages/partner/index' })
+    return
+  }
   uni.navigateTo({ url: `/pages/placeholder/index?title=${item.title}` })
 }
 

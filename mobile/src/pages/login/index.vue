@@ -40,7 +40,7 @@ const submit = async () => {
   try {
     const data = await request.post('/auth/login', form)
     store.setToken(data.token)
-    store.profile = data.user
+    store.setProfile(data.user)
     await store.fetchUnread()
     await store.syncAnnouncement()
     uni.showToast({ title: '登录成功', icon: 'success' })

@@ -2,6 +2,7 @@ package com.campus.platform.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.campus.platform.common.BusinessException;
 import com.campus.platform.config.AppProperties;
 import com.campus.platform.config.NotificationWebSocketHandler;
 import com.campus.platform.dto.AdminHandleReportRequest;
@@ -20,6 +21,7 @@ import com.campus.platform.vo.ReportVO;
 import com.campus.platform.vo.ReportStatusChangedEventVO;
 import com.campus.platform.vo.WebSocketEventVO;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -42,6 +44,8 @@ public class ReportService {
 
     @Transactional
     public ReportVO create(Long userId, ReportCreateRequest request) {
+        validateReportCreate(userId, request);
+
         ReportTicket report = new ReportTicket();
         report.setModule(request.getModule());
         report.setTargetType(request.getTargetType());
@@ -61,6 +65,53 @@ public class ReportService {
             reportAttachmentMapper.insert(attachment);
         }
         return toVo(report);
+    }
+
+    private void validateReportCreate(Long userId, ReportCreateRequest request) {
+        LocalDateTime now = LocalDateTime.now();
+
+        List<ReportTicket> sameTargetReports = new ArrayList<>();
+        if (request.getTargetId() != null) {
+            sameTargetReports = reportTicketMapper.selectList(
+                new LambdaQueryWrapper<ReportTicket>()
+                    .eq(ReportTicket::getSubmitterId, userId)
+                    .eq(ReportTicket::getModule, request.getModule())
+                    .eq(ReportTicket::getTargetType, request.getTargetType())
+                    .eq(ReportTicket::getTargetId, request.getTargetId())
+                    .orderByDesc(ReportTicket::getCreatedAt)
+            );
+        }
+
+        boolean hasOpenDuplicate = sameTargetReports.stream().anyMatch(item ->
+            "PENDING".equalsIgnoreCase(item.getStatus()) || "PROCESSING".equalsIgnoreCase(item.getStatus()));
+        if (hasOpenDuplicate) {
+            throw new BusinessException("该内容已有处理中举报，请勿重复提交");
+        }
+
+        boolean hasRecentDuplicate = sameTargetReports.stream().anyMatch(item ->
+            item.getCreatedAt() != null && item.getCreatedAt().isAfter(now.minusHours(12)));
+        if (hasRecentDuplicate) {
+            throw new BusinessException("同一目标 12 小时内已举报，请稍后查看处理进度");
+        }
+
+        long recentReportCount = reportTicketMapper.selectCount(
+            new LambdaQueryWrapper<ReportTicket>()
+                .eq(ReportTicket::getSubmitterId, userId)
+                .ge(ReportTicket::getCreatedAt, now.minusMinutes(10))
+        );
+        if (recentReportCount >= 3) {
+            throw new BusinessException("举报提交过于频繁，请 10 分钟后再试");
+        }
+
+        long rejectedCount = reportTicketMapper.selectCount(
+            new LambdaQueryWrapper<ReportTicket>()
+                .eq(ReportTicket::getSubmitterId, userId)
+                .eq(ReportTicket::getStatus, "REJECTED")
+                .ge(ReportTicket::getCreatedAt, now.minusDays(30))
+        );
+        if (rejectedCount >= 5) {
+            throw new BusinessException("近期无效举报次数较多，举报功能已临时限制");
+        }
     }
 
     public List<ReportVO> myReports(Long userId) {

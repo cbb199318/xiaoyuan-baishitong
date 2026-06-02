@@ -17,6 +17,10 @@ export const useUserStore = defineStore('user', {
       uni.setStorageSync('token', token)
       connectSocket(token)
     },
+    setProfile(profile) {
+      this.profile = profile
+      uni.setStorageSync('user-info', profile || '')
+    },
     clearAuth() {
       this.token = ''
       this.profile = null
@@ -24,10 +28,12 @@ export const useUserStore = defineStore('user', {
       this.systemAnnouncement = ''
       this.messageEventTick = 0
       uni.removeStorageSync('token')
+      uni.removeStorageSync('user-info')
       closeSocket()
     },
     async fetchProfile() {
-      this.profile = await request.get('/auth/me')
+      const profile = await request.get('/auth/me')
+      this.setProfile(profile)
       return this.profile
     },
     async fetchUnread() {

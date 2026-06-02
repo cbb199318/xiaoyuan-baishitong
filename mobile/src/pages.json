@@ -149,6 +149,71 @@
       "style": {
         "navigationBarTitleText": "订单评价"
       }
+    },
+    {
+      "path": "pages/partner/index",
+      "style": {
+        "navigationBarTitleText": "校园搭子",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": true,
+        "backgroundColor": "#f4f7fb"
+      }
+    },
+    {
+      "path": "pages/partner/publish",
+      "style": {
+        "navigationBarTitleText": "发布搭子需求",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f7fb"
+      }
+    },
+    {
+      "path": "pages/partner/messages",
+      "style": {
+        "navigationBarTitleText": "搭子消息",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f7fb"
+      }
+    },
+    {
+      "path": "pages/partner/chat",
+      "style": {
+        "navigationBarTitleText": "搭子聊天",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f7fb"
+      }
+    },
+    {
+      "path": "pages/partner/detail",
+      "style": {
+        "navigationBarTitleText": "搭子详情",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f7fb"
+      }
+    },
+    {
+      "path": "pages/partner/mine",
+      "style": {
+        "navigationBarTitleText": "个人中心",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f7fb"
+      }
+    },
+    {
+      "path": "pages/partner/profile",
+      "style": {
+        "navigationBarTitleText": "对方主页",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f7fb"
+      }
+    },
+    {
+      "path": "pages/partner/reports",
+      "style": {
+        "navigationBarTitleText": "搭子举报记录",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f7fb"
+      }
     }
   ],
   "tabBar": {
