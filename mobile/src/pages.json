@@ -1,0 +1,180 @@
+{
+  "pages": [
+    {
+      "path": "pages/login/index",
+      "style": {
+        "navigationBarTitleText": "登录",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/register/index",
+      "style": {
+        "navigationBarTitleText": "注册"
+      }
+    },
+    {
+      "path": "pages/home/index",
+      "style": {
+        "navigationBarTitleText": "校园百事通"
+      }
+    },
+    {
+      "path": "pages/messages/index",
+      "style": {
+        "navigationBarTitleText": "消息中心"
+      }
+    },
+    {
+      "path": "pages/profile/index",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    {
+      "path": "pages/errand/index",
+      "style": {
+        "navigationBarTitleText": "校园跑腿代取服务",
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": true,
+        "backgroundColor": "#f4f7fb"
+      }
+    },
+    {
+      "path": "pages/errand/square",
+      "style": {
+        "navigationBarTitleText": "订单广场"
+      }
+    },
+    {
+      "path": "pages/errand/create",
+      "style": {
+        "navigationBarTitleText": "发布订单"
+      }
+    },
+    {
+      "path": "pages/errand/messages",
+      "style": {
+        "navigationBarTitleText": "消息中心"
+      }
+    },
+    {
+      "path": "pages/errand/mine",
+      "style": {
+        "navigationBarTitleText": "个人中心"
+      }
+    },
+    {
+      "path": "pages/messages/detail",
+      "style": {
+        "navigationBarTitleText": "会话详情"
+      }
+    },
+    {
+      "path": "pages/profile/edit",
+      "style": {
+        "navigationBarTitleText": "个人资料"
+      }
+    },
+    {
+      "path": "pages/verification/index",
+      "style": {
+        "navigationBarTitleText": "实名认证"
+      }
+    },
+    {
+      "path": "pages/report/create",
+      "style": {
+        "navigationBarTitleText": "提交举报"
+      }
+    },
+    {
+      "path": "pages/report/list",
+      "style": {
+        "navigationBarTitleText": "举报记录"
+      }
+    },
+    {
+      "path": "pages/placeholder/index",
+      "style": {
+        "navigationBarTitleText": "功能建设中"
+      }
+    },
+    {
+      "path": "pages/errand/detail",
+      "style": {
+        "navigationBarTitleText": "订单详情",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/errand/chat",
+      "style": {
+        "navigationBarTitleText": "订单聊天",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/errand/favorites",
+      "style": {
+        "navigationBarTitleText": "我的收藏"
+      }
+    },
+    {
+      "path": "pages/errand/income",
+      "style": {
+        "navigationBarTitleText": "收支明细"
+      }
+    },
+    {
+      "path": "pages/errand/evaluation",
+      "style": {
+        "navigationBarTitleText": "我的评价"
+      }
+    },
+    {
+      "path": "pages/errand/support",
+      "style": {
+        "navigationBarTitleText": "帮助与售后"
+      }
+    },
+    {
+      "path": "pages/errand/rules",
+      "style": {
+        "navigationBarTitleText": "平台规则中心"
+      }
+    },
+    {
+      "path": "pages/errand/evaluate",
+      "style": {
+        "navigationBarTitleText": "订单评价"
+      }
+    }
+  ],
+  "tabBar": {
+    "color": "#5f6b7a",
+    "selectedColor": "#2d7ff9",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/messages/index",
+        "text": "消息"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "校园百事通",
+    "navigationBarBackgroundColor": "#f8fafc",
+    "backgroundColor": "#f4f7fb"
+  }
+}

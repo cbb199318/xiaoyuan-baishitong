@@ -1,0 +1,14 @@
+body {
+  margin: 0;
+  background: #f3f6fb;
+  color: #111827;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.admin-shell {
+  min-height: 100vh;
+}
