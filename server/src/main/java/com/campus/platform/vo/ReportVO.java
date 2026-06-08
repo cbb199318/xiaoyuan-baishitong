@@ -16,10 +16,14 @@ public class ReportVO {
     private String reportType;
     private String description;
     private String contactPhone;
+    private Long reporterUserId;
     private String status;
     private String handleRemark;
     private List<FileAssetVO> attachments;
     private Long handledBy;
     private LocalDateTime handledAt;
+    private LocalDateTime deadlineAt;
+    private Boolean isOverdue;
+    private Long remainingMinutes;
     private LocalDateTime createdAt;
 }

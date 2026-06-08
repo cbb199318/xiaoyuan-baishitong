@@ -15,4 +15,21 @@ public class ErrandRuleUpdateRequest {
     @NotNull
     @DecimalMin("0.00")
     private BigDecimal fragileFee;
+
+    @NotNull
+    private Integer publishLimitPerUser;
+
+    @NotNull
+    private Integer acceptLimitPerUser;
+
+    @NotNull
+    private Integer autoExpireHours;
+
+    @NotNull
+    @DecimalMin("0.00")
+    private BigDecimal minBaseFee;
+
+    @NotNull
+    @DecimalMin("0.00")
+    private BigDecimal maxBaseFee;
 }

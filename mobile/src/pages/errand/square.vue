@@ -64,10 +64,10 @@
               </text>
             </view>
             <view
-              :class="['accept-btn', isOrderActive(item) ? 'active' : 'disabled']"
+              :class="['accept-btn', canAcceptOrder(item) ? 'active' : 'disabled']"
               @click.stop="acceptOrder(item)"
             >
-              {{ isOrderActive(item) ? '立即接单' : '不可接单' }}
+              {{ canAcceptOrder(item) ? '立即接单' : '不可接单' }}
             </view>
           </view>
         </view>
@@ -147,6 +147,8 @@ const isExpired = (item) => parseTime(item.acceptDeadline) <= now.value
 
 const isOrderActive = (item) =>
   item.status === 'PUBLISHED' && item.publicVisible && !isExpired(item)
+
+const canAcceptOrder = (item) => isOrderActive(item) && !!item.canAccept
 
 const formatRemaining = (value) => {
   const remain = parseTime(value) - now.value
@@ -256,7 +258,7 @@ const handleLoadMore = () => {
 }
 
 const acceptOrder = async (item) => {
-  if (!isOrderActive(item)) {
+  if (!canAcceptOrder(item)) {
     uni.showToast({ title: '当前订单不可接单', icon: 'none' })
     return
   }

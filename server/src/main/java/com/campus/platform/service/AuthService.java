@@ -41,6 +41,7 @@ public class AuthService {
         user.setNickname("用户" + request.getPhone().substring(7));
         user.setRole(RoleType.USER.name());
         user.setStatus(UserStatus.ACTIVE.name());
+        user.setReportRestricted(0);
         userMapper.insert(user);
 
         UserProfile profile = new UserProfile();
@@ -57,8 +58,10 @@ public class AuthService {
         if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new BusinessException(401, "手机号或密码错误");
         }
+        if (!UserStatus.canLogin(user.getStatus())) {
+            throw new BusinessException(403, "当前账号已被限制登录，请联系管理员处理");
+        }
         JwtUserPrincipal principal = new JwtUserPrincipal(user.getId(), user.getPhone(), user.getPassword(), user.getRole(), user.getStatus());
         return new AuthLoginVO(jwtTokenService.generateToken(principal), userService.getProfile(user.getId()));
     }
 }
-

@@ -1,5 +1,6 @@
 package com.campus.platform.security;
 
+import com.campus.platform.enums.UserStatus;
 import java.util.Collection;
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -45,7 +46,6 @@ public class JwtUserPrincipal implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return "ACTIVE".equalsIgnoreCase(status);
+        return UserStatus.canLogin(status);
     }
 }
-

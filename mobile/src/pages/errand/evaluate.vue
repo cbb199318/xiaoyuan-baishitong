@@ -187,7 +187,7 @@ const submit = async () => {
     setTimeout(() => {
       uni.navigateBack({
         fail: () => {
-          uni.navigateTo({ url: '/pages/errand/evaluation' })
+          uni.redirectTo({ url: '/pages/errand/evaluation' })
         },
       })
     }, 300)

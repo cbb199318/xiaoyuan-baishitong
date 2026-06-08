@@ -20,5 +20,5 @@ public class User extends BaseEntity {
     private String avatarUrl;
     private String role;
     private String status;
+    private Integer reportRestricted;
 }
-

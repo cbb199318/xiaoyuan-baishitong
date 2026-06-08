@@ -66,7 +66,7 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import PartnerReportModal from '../../components/PartnerReportModal.vue'
-import { getPartnerUserProfile } from '../../utils/partnerMock'
+import { getPartnerUserProfile } from '../../utils/partnerApi'
 
 const targetUserId = ref('')
 const userProfile = ref(null)
@@ -80,8 +80,16 @@ const maskedPhone = computed(() => {
   return `${phone.slice(0, 3)}****${phone.slice(-4)}`
 })
 
-const loadProfile = () => {
-  userProfile.value = getPartnerUserProfile(targetUserId.value)
+const loadProfile = async () => {
+  if (!targetUserId.value) {
+    userProfile.value = null
+    return
+  }
+  try {
+    userProfile.value = await getPartnerUserProfile(targetUserId.value)
+  } catch (error) {
+    userProfile.value = null
+  }
 }
 
 const openReport = () => {
@@ -95,7 +103,7 @@ const viewDemands = () => {
 const goBack = () => {
   uni.navigateBack({
     fail: () => {
-      uni.navigateTo({ url: '/pages/partner/index' })
+      uni.redirectTo({ url: '/pages/partner/index' })
     },
   })
 }
@@ -104,8 +112,8 @@ onLoad((options) => {
   targetUserId.value = options?.userId || ''
 })
 
-onShow(() => {
-  loadProfile()
+onShow(async () => {
+  await loadProfile()
 })
 </script>
 

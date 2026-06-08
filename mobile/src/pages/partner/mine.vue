@@ -15,7 +15,7 @@
             <view class="profile-avatar">{{ (profile?.nickname || '搭').slice(0, 1) }}</view>
             <view class="profile-info">
               <text class="profile-name">{{ profile?.nickname || '搭子用户' }}</text>
-              <text class="profile-role">跑腿身份：全员通用用户</text>
+              <text class="profile-role">搭子身份：全员通用用户</text>
               <text class="profile-meta">手机号：{{ profile?.phone || '-' }}</text>
             </view>
           </view>
@@ -181,13 +181,12 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { useUserStore } from '../../stores/user'
 import {
-  getAllPartnerDemands,
   getPartnerProfileTags,
   partnerCategoryMap,
   partnerPresetTags,
   savePartnerProfileTags,
-  updatePartnerDemandStatus,
 } from '../../utils/partnerMock'
+import { listMyPartnerDemands, offlinePartnerDemand } from '../../utils/partnerApi'
 import { getPartnerConversations, updatePartnerConversationStatus } from '../../utils/partnerChat'
 
 const store = useUserStore()
@@ -236,11 +235,14 @@ const activeApplicants = computed(() => {
   )
 })
 
-const loadMineData = () => {
+const loadMineData = async () => {
   const userId = Number(profile.value?.userId || 0)
   profileTags.value = getPartnerProfileTags(userId)
-  publishedList.value = getAllPartnerDemands().filter((item) => Number(item.publisherId || 0) === userId)
-  conversationList.value = getPartnerConversations(userId)
+  conversationList.value = await getPartnerConversations(userId)
+}
+
+const loadPublishedList = async () => {
+  publishedList.value = await listMyPartnerDemands()
 }
 
 const toggleTag = (tag) => {
@@ -302,10 +304,13 @@ const editDemand = (item) => {
   uni.navigateTo({ url: `/pages/partner/publish?id=${item.id}` })
 }
 
-const offlineDemand = (item) => {
-  updatePartnerDemandStatus(item.id, 'OFFLINE')
-  uni.showToast({ title: '需求已下架', icon: 'success' })
-  loadMineData()
+const offlineDemand = async (item) => {
+  try {
+    await offlinePartnerDemand(item.id)
+    uni.showToast({ title: '需求已下架', icon: 'success' })
+    await loadPublishedList()
+  } catch (error) {
+  }
 }
 
 const viewApplicants = (item) => {
@@ -322,18 +327,21 @@ const closeApplicantPanel = () => {
   selectedDemand.value = null
 }
 
-const handleApplicantStatus = (item, status) => {
+const handleApplicantStatus = async (item, status) => {
   if (item.status === status) {
     uni.showToast({ title: status === 'ACCEPTED' ? '该申请已同意' : '该申请已拒绝', icon: 'none' })
     return
   }
-  updatePartnerConversationStatus({
-    conversationId: item.id,
-    status,
-    operatorName: profile.value?.nickname || '发布者',
-  })
-  uni.showToast({ title: status === 'ACCEPTED' ? '已同意申请' : '已拒绝申请', icon: 'success' })
-  loadMineData()
+  try {
+    await updatePartnerConversationStatus({
+      conversationId: item.id,
+      status,
+      operatorName: profile.value?.nickname || '发布者',
+    })
+    uni.showToast({ title: status === 'ACCEPTED' ? '已同意申请' : '已拒绝申请', icon: 'success' })
+    await loadMineData()
+  } catch (error) {
+  }
 }
 
 const formatTime = (value) => (value ? value.replace('T', ' ').slice(0, 16) : '')
@@ -345,7 +353,7 @@ const go = (url) => {
 const goBack = () => {
   uni.navigateBack({
     fail: () => {
-      uni.navigateTo({ url: '/pages/partner/index' })
+      uni.redirectTo({ url: '/pages/partner/index' })
     },
   })
 }
@@ -354,7 +362,8 @@ onShow(async () => {
   if (!store.profile) {
     await store.fetchProfile()
   }
-  loadMineData()
+  await loadMineData()
+  await loadPublishedList()
 })
 </script>
 

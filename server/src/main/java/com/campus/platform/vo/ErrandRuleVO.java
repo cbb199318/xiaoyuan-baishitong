@@ -10,4 +10,9 @@ public class ErrandRuleVO {
 
     private BigDecimal urgentFee;
     private BigDecimal fragileFee;
+    private Integer publishLimitPerUser;
+    private Integer acceptLimitPerUser;
+    private Integer autoExpireHours;
+    private BigDecimal minBaseFee;
+    private BigDecimal maxBaseFee;
 }

@@ -16,5 +16,5 @@ public class UserProfileVO {
     private String gender;
     private String contactPhone;
     private String bio;
+    private String publishRole;
 }
-

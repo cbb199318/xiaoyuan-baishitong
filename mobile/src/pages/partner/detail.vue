@@ -78,19 +78,20 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import PartnerReportModal from '../../components/PartnerReportModal.vue'
 import { useUserStore } from '../../stores/user'
 import { ensurePartnerConversation, findPartnerConversationByDemandAndUser } from '../../utils/partnerChat'
-import { getPartnerDemandById, getPartnerProfileTags, partnerCategoryMap } from '../../utils/partnerMock'
+import { getPartnerProfileTags, partnerCategoryMap } from '../../utils/partnerMock'
+import { getPartnerDemandDetail } from '../../utils/partnerApi'
 
 const store = useUserStore()
 const demandId = ref('')
 const detail = ref(null)
+const existingConversation = ref(null)
 const showReportModal = ref(false)
 
 const categoryMap = partnerCategoryMap
 
 const currentUserId = computed(() => Number(store.profile?.userId || 0))
 const isOwnDemand = computed(() => Number(detail.value?.publisherId || 0) === currentUserId.value)
-const existingConversation = computed(() => findPartnerConversationByDemandAndUser(demandId.value, currentUserId.value))
-const canChat = computed(() => Boolean(existingConversation.value))
+const canChat = computed(() => Boolean(existingConversation.value?.id))
 const canApply = computed(() => Boolean(detail.value) && !isOwnDemand.value && detail.value.status !== 'OFFLINE' && !existingConversation.value)
 const applyButtonText = computed(() => {
   if (!detail.value) {
@@ -106,11 +107,31 @@ const applyButtonText = computed(() => {
 })
 const publisherTags = computed(() => getPartnerProfileTags(detail.value?.publisherId).slice(0, 4))
 
-const loadDetail = () => {
-  detail.value = getPartnerDemandById(demandId.value)
+const loadConversation = async () => {
+  if (!demandId.value || !currentUserId.value) {
+    existingConversation.value = null
+    return
+  }
+  try {
+    existingConversation.value = await findPartnerConversationByDemandAndUser(demandId.value, currentUserId.value)
+  } catch (error) {
+    existingConversation.value = null
+  }
 }
 
-const applyDemand = () => {
+const loadDetail = async () => {
+  if (!demandId.value) {
+    detail.value = null
+    return
+  }
+  try {
+    detail.value = await getPartnerDemandDetail(demandId.value)
+  } catch (error) {
+    detail.value = null
+  }
+}
+
+const applyDemand = async () => {
   if (!detail.value) {
     return
   }
@@ -126,17 +147,15 @@ const applyDemand = () => {
     uni.showToast({ title: '当前不可申请', icon: 'none' })
     return
   }
-  const conversation = ensurePartnerConversation({
-    demand: {
-      ...detail.value,
-      typeLabel: categoryMap[detail.value.type] || detail.value.type,
-    },
-    currentUser: store.profile,
-  })
-  uni.showToast({ title: '已提交搭子申请', icon: 'success' })
-  setTimeout(() => {
-    uni.navigateTo({ url: `/pages/partner/chat?id=${conversation.id}` })
-  }, 220)
+  try {
+    const conversation = await ensurePartnerConversation({ demand: detail.value, currentUser: store.profile })
+    existingConversation.value = conversation
+    uni.showToast({ title: '已提交搭子申请', icon: 'success' })
+    setTimeout(() => {
+      uni.navigateTo({ url: `/pages/partner/chat?id=${conversation.id}` })
+    }, 220)
+  } catch (error) {
+  }
 }
 
 const openChat = () => {
@@ -165,7 +184,7 @@ const openPublisherProfile = () => {
 const goBack = () => {
   uni.navigateBack({
     fail: () => {
-      uni.navigateTo({ url: '/pages/partner/index' })
+      uni.redirectTo({ url: '/pages/partner/index' })
     },
   })
 }
@@ -178,7 +197,8 @@ onShow(async () => {
   if (!store.profile) {
     await store.fetchProfile()
   }
-  loadDetail()
+  await loadDetail()
+  await loadConversation()
 })
 </script>
 

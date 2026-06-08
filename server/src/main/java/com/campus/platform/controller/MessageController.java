@@ -44,6 +44,12 @@ public class MessageController {
         return ApiResponse.success("success", null);
     }
 
+    @PostMapping("/conversations/{id}/hide")
+    public ApiResponse<Void> hide(@PathVariable("id") Long conversationId) {
+        messageService.hideConversation(SecurityUtils.getCurrentUserId(), conversationId);
+        return ApiResponse.success("success", null);
+    }
+
     @GetMapping("/messages/unread")
     public ApiResponse<UnreadVO> unread() {
         return ApiResponse.success(messageService.getUnread(SecurityUtils.getCurrentUserId()));

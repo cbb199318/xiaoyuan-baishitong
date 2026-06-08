@@ -99,42 +99,52 @@ const counterpartyTags = computed(() => {
   return getPartnerProfileTags(targetId).slice(0, 4)
 })
 
-const syncConversation = () => {
+const syncConversation = async () => {
   if (!conversationId.value) {
     return
   }
-  refreshTick.value = getPartnerChatRefreshTick()
-  detail.value = getPartnerConversationDetail(conversationId.value)
-  if (detail.value && currentUserId.value) {
-    detail.value.counterpartyName = detail.value.publisherId === currentUserId.value
-      ? detail.value.applicantName
-      : detail.value.publisherName
+  try {
+    refreshTick.value = getPartnerChatRefreshTick()
+    detail.value = await getPartnerConversationDetail(conversationId.value)
+    if (detail.value && currentUserId.value) {
+      detail.value.counterpartyName = detail.value.publisherId === currentUserId.value
+        ? detail.value.applicantName
+        : detail.value.publisherName
+    }
+  } catch (error) {
+    detail.value = null
   }
 }
 
-const sendText = () => {
+const sendText = async () => {
   if (!content.value || !conversationId.value) {
     return
   }
-  appendPartnerMessage({
-    conversationId: conversationId.value,
-    currentUser: store.profile,
-    type: 'TEXT',
-    content: content.value,
-  })
-  content.value = ''
-  syncConversation()
+  try {
+    detail.value = await appendPartnerMessage({
+      conversationId: conversationId.value,
+      currentUser: store.profile,
+      type: 'TEXT',
+      content: content.value,
+    })
+    content.value = ''
+    await syncConversation()
+  } catch (error) {
+  }
 }
 
 const sendImage = async () => {
-  const file = await uploadImage({ bizType: 'partner_chat_image' })
-  appendPartnerMessage({
-    conversationId: conversationId.value,
-    currentUser: store.profile,
-    type: 'IMAGE',
-    content: file.url,
-  })
-  syncConversation()
+  try {
+    const file = await uploadImage({ bizType: 'partner_chat_image' })
+    detail.value = await appendPartnerMessage({
+      conversationId: conversationId.value,
+      currentUser: store.profile,
+      type: 'IMAGE',
+      content: file.url,
+    })
+    await syncConversation()
+  } catch (error) {
+  }
 }
 
 const previewImage = (url) => {
@@ -166,14 +176,16 @@ const openCounterpartyProfile = () => {
 const goBack = () => {
   uni.navigateBack({
     fail: () => {
-      uni.navigateTo({ url: '/pages/partner/messages' })
+      uni.redirectTo({ url: '/pages/partner/messages' })
     },
   })
 }
 
 const formatTime = (value) => (value ? value.replace('T', ' ').slice(0, 16) : '')
 
-watch(() => store.messageEventTick, syncConversation)
+watch(() => store.messageEventTick, () => {
+  syncConversation()
+})
 
 onLoad((options) => {
   conversationId.value = options?.id || ''
@@ -183,10 +195,10 @@ onShow(async () => {
   if (!store.profile) {
     await store.fetchProfile()
   }
-  syncConversation()
+  await syncConversation()
   if (conversationId.value && currentUserId.value) {
-    markPartnerConversationRead(conversationId.value, currentUserId.value)
-    syncConversation()
+    await markPartnerConversationRead(conversationId.value, currentUserId.value)
+    await syncConversation()
   }
 })
 </script>

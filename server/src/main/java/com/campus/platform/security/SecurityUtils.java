@@ -20,4 +20,12 @@ public final class SecurityUtils {
     public static Long getCurrentUserId() {
         return getCurrentUser().getUserId();
     }
+
+    public static Long getCurrentUserIdOrNull() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof JwtUserPrincipal principal)) {
+            return null;
+        }
+        return principal.getUserId();
+    }
 }

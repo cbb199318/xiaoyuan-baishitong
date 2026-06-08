@@ -37,6 +37,9 @@ public class ErrandOrderVO {
     private ErrandCounterpartyVO runner;
     private List<FileAssetVO> attachments;
     private List<ReportVO> relatedReports;
+    private Integer activeReportCount;
+    private Integer overdueReportCount;
+    private List<String> riskTags;
     private Long conversationId;
     private Boolean canAccept;
     private Boolean canCancel;

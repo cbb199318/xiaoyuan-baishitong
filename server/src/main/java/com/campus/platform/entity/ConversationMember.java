@@ -18,5 +18,5 @@ public class ConversationMember extends BaseEntity {
     private Long userId;
     private Integer unreadCount;
     private Long lastReadMessageId;
+    private Boolean hidden;
 }
-

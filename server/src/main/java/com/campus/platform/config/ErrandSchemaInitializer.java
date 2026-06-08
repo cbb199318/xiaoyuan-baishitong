@@ -3,11 +3,13 @@ package com.campus.platform.config;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.stereotype.Component;
 
 @Component
+@Order(0)
 @RequiredArgsConstructor
 public class ErrandSchemaInitializer implements ApplicationRunner {
 

@@ -88,7 +88,7 @@ class ServerApplicationTests {
         Long publisherId = registerUser(publisherPhone).getUser().getUserId();
         errandOrderService.create(publisherId, buildCreateRequest());
 
-        Page<?> page = errandOrderService.adminPage(publisherPhone, "", 1, 20);
+        Page<?> page = errandOrderService.adminPage(publisherPhone, "", "", "", "", 1, 20);
         assertThat(page.getTotal()).isGreaterThanOrEqualTo(1);
     }
 

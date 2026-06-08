@@ -2,6 +2,7 @@ package com.campus.platform.security;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.campus.platform.entity.User;
+import com.campus.platform.enums.UserStatus;
 import com.campus.platform.mapper.UserMapper;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
@@ -34,7 +35,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Claims claims = jwtTokenService.parse(token);
                 Long userId = Long.valueOf(claims.getSubject());
                 User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getId, userId));
-                if (user != null) {
+                if (user != null && UserStatus.canLogin(user.getStatus())) {
                     JwtUserPrincipal principal =
                         new JwtUserPrincipal(user.getId(), user.getPhone(), user.getPassword(), user.getRole(), user.getStatus());
                     UsernamePasswordAuthenticationToken authentication =
@@ -48,4 +49,3 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 }
-

@@ -208,7 +208,7 @@ const contactPhone = () => {
 const goBack = () => {
   uni.navigateBack({
     fail: () => {
-      uni.navigateTo({ url: '/pages/errand/index?tab=square' })
+      uni.redirectTo({ url: '/pages/errand/index?tab=square' })
     },
   })
 }

@@ -122,6 +122,21 @@ CREATE TABLE IF NOT EXISTS `admin_operation_log` (
   `deleted` TINYINT
 );
 
+CREATE TABLE IF NOT EXISTS `errand_rule_config` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `config_key` VARCHAR(32),
+  `urgent_fee` DECIMAL(10,2),
+  `fragile_fee` DECIMAL(10,2),
+  `publish_limit_per_user` INT,
+  `accept_limit_per_user` INT,
+  `auto_expire_hours` INT,
+  `min_base_fee` DECIMAL(10,2),
+  `max_base_fee` DECIMAL(10,2),
+  `created_at` TIMESTAMP,
+  `updated_at` TIMESTAMP,
+  `deleted` TINYINT
+);
+
 CREATE TABLE IF NOT EXISTS `errand_order` (
   `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
   `order_no` VARCHAR(40),

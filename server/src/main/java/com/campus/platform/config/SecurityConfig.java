@@ -30,6 +30,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/auth/register", "/auth/login").permitAll()
                 .requestMatchers(HttpMethod.GET, "/files/view/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/beauty/goods", "/beauty/goods/*").permitAll()
+                .requestMatchers(HttpMethod.GET, "/partner/demands", "/partner/demands/*", "/partner/users/*").permitAll()
                 .requestMatchers("/admin/login").permitAll()
                 .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/error").permitAll()
@@ -51,4 +53,3 @@ public class SecurityConfig {
         return configuration.getAuthenticationManager();
     }
 }
-

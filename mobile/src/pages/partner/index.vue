@@ -121,12 +121,11 @@ import { computed, ref } from 'vue'
 import { onHide, onLoad, onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import PartnerReportModal from '../../components/PartnerReportModal.vue'
 import {
-  getPartnerMockList,
   partnerCategoryMap,
   partnerCategoryOptions,
-  partnerStorageKeys,
 } from '../../utils/partnerMock'
-import { ensurePartnerConversation } from '../../utils/partnerChat'
+import { listPartnerDemands } from '../../utils/partnerApi'
+import { ensurePartnerConversation, getPartnerConversations } from '../../utils/partnerChat'
 import { useUserStore } from '../../stores/user'
 
 const store = useUserStore()
@@ -134,26 +133,11 @@ const keyword = ref('')
 const activeCategory = ref('ALL')
 const appliedIds = ref([])
 const showMore = ref(false)
-const partnerList = ref(getPartnerMockList())
-const refreshTick = ref('')
+const partnerList = ref([])
+const loading = ref(false)
 const showReportModal = ref(false)
 const activeReportTargetId = ref('')
 const filterPublisherId = ref('')
-
-const appliedKey = computed(() => `partner-applied-${store.profile?.userId || 'guest'}`)
-
-const readAppliedIds = () => {
-  const raw = uni.getStorageSync(appliedKey.value) || '[]'
-  try {
-    return JSON.parse(raw)
-  } catch (error) {
-    return []
-  }
-}
-
-const writeAppliedIds = () => {
-  uni.setStorageSync(appliedKey.value, JSON.stringify(appliedIds.value))
-}
 
 const normalizedKeyword = computed(() => keyword.value.trim().toLowerCase())
 
@@ -180,17 +164,31 @@ const filteredList = computed(() => {
     })
 })
 
-const syncPartnerList = () => {
-  const nextTick = uni.getStorageSync(partnerStorageKeys.refreshTick) || ''
-  if (nextTick !== refreshTick.value) {
-    refreshTick.value = nextTick
-  }
-  partnerList.value = getPartnerMockList()
-}
+const normalizeDemandItem = (item) => ({
+  ...item,
+  matchScore: Number(item?.matchScore || 100),
+})
 
-const reloadPartnerContent = (showToast = false) => {
-  syncPartnerList()
-  appliedIds.value = readAppliedIds()
+const reloadPartnerContent = async (showToast = false) => {
+  loading.value = true
+  try {
+    const [list, conversations] = await Promise.all([
+      listPartnerDemands({
+        keyword: keyword.value,
+        type: activeCategory.value === 'ALL' ? '' : activeCategory.value,
+        publisherId: filterPublisherId.value || undefined,
+      }),
+      store.profile ? getPartnerConversations() : Promise.resolve([]),
+    ])
+    partnerList.value = Array.isArray(list) ? list.map(normalizeDemandItem) : []
+    appliedIds.value = Array.isArray(conversations)
+      ? conversations
+          .filter((item) => Number(item.applicantId) === Number(store.profile?.userId || 0))
+          .map((item) => item.demandId)
+      : []
+  } finally {
+    loading.value = false
+  }
   if (showToast) {
     uni.showToast({ title: '列表已刷新', icon: 'none' })
   }
@@ -208,7 +206,7 @@ const displayList = computed(() =>
 const isApplied = (id) => appliedIds.value.includes(id)
 const isOwnDemand = (item) => Number(item.publisherId || 0) === Number(store.profile?.userId || 0)
 
-const applyPartner = (item) => {
+const applyPartner = async (item) => {
   if (isOwnDemand(item)) {
     uni.showToast({ title: '自己发布的需求无需申请', icon: 'none' })
     return
@@ -217,19 +215,15 @@ const applyPartner = (item) => {
     uni.navigateTo({ url: '/pages/partner/messages' })
     return
   }
-  appliedIds.value = [...appliedIds.value, item.id]
-  writeAppliedIds()
-  const conversation = ensurePartnerConversation({
-    demand: {
-      ...item,
-      typeLabel: partnerCategoryMap[item.type] || item.type,
-    },
-    currentUser: store.profile,
-  })
-  uni.showToast({ title: '已提交搭子申请', icon: 'success' })
-  setTimeout(() => {
-    uni.navigateTo({ url: `/pages/partner/chat?id=${conversation.id}` })
-  }, 220)
+  try {
+    const conversation = await ensurePartnerConversation({ demand: item, currentUser: store.profile })
+    appliedIds.value = [...new Set([...appliedIds.value, item.id])]
+    uni.showToast({ title: '已提交搭子申请', icon: 'success' })
+    setTimeout(() => {
+      uni.navigateTo({ url: `/pages/partner/chat?id=${conversation.id}` })
+    }, 220)
+  } catch (error) {
+  }
 }
 
 const reportItem = (item) => {
@@ -239,6 +233,7 @@ const reportItem = (item) => {
 
 const selectCategory = (value) => {
   activeCategory.value = value
+  reloadPartnerContent()
 }
 
 const toggleMore = () => {
@@ -246,8 +241,7 @@ const toggleMore = () => {
 }
 
 const refreshList = () => {
-  const count = displayList.value.length
-  uni.showToast({ title: count ? `找到 ${count} 条需求` : '暂无匹配结果', icon: 'none' })
+  reloadPartnerContent(true)
 }
 
 const goBack = () => {
@@ -285,7 +279,7 @@ onShow(async () => {
     await store.fetchProfile()
   }
   uni.$on('partner-published', handlePublished)
-  reloadPartnerContent()
+  await reloadPartnerContent()
 })
 
 onHide(() => {
@@ -295,8 +289,9 @@ onHide(() => {
 })
 
 onPullDownRefresh(() => {
-  reloadPartnerContent()
-  uni.stopPullDownRefresh()
+  reloadPartnerContent().finally(() => {
+    uni.stopPullDownRefresh()
+  })
 })
 
 onLoad((options) => {

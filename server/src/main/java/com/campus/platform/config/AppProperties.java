@@ -29,5 +29,10 @@ public class AppProperties {
     public static class Errand {
         private java.math.BigDecimal urgentFee;
         private java.math.BigDecimal fragileFee;
+        private Integer publishLimitPerUser;
+        private Integer acceptLimitPerUser;
+        private Integer autoExpireHours;
+        private java.math.BigDecimal minBaseFee;
+        private java.math.BigDecimal maxBaseFee;
     }
 }

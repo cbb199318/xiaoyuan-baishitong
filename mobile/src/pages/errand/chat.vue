@@ -145,7 +145,7 @@ const formatTime = (value) => {
 const goBack = () => {
   uni.navigateBack({
     fail: () => {
-      uni.navigateTo({ url: '/pages/errand/index?tab=messages' })
+      uni.redirectTo({ url: '/pages/errand/index?tab=messages' })
     },
   })
 }

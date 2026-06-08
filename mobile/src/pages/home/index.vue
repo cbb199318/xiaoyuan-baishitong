@@ -1,10 +1,5 @@
 <template>
   <view class="page-shell">
-    <view class="card hero">
-      <text class="hero-title">校园百事通</text>
-      <text class="hero-sub">先把通用能力搭起来，四大模块后续可以直接接入。</text>
-    </view>
-
     <view class="section-title">系统公告</view>
     <view class="card notice-card">
       <text class="notice-text">{{ announcement }}</text>
@@ -35,7 +30,7 @@ import { useUserStore } from '../../stores/user'
 
 const store = useUserStore()
 const announcement = computed(
-  () => store.systemAnnouncement || '欢迎来到校园百事通，一期通用功能正在持续完善中。'
+  () => store.systemAnnouncement || '欢迎来到校园百事通，祝你使用顺利。'
 )
 
 const modules = [
@@ -58,6 +53,14 @@ const openPlaceholder = (item) => {
     uni.navigateTo({ url: '/pages/partner/index' })
     return
   }
+  if (item.title === '勤工助学') {
+    uni.navigateTo({ url: '/pages/jobs/index?tab=home' })
+    return
+  }
+  if (item.title === '美妆选购') {
+    uni.navigateTo({ url: '/pages/beauty/index' })
+    return
+  }
   uni.navigateTo({ url: `/pages/placeholder/index?title=${item.title}` })
 }
 
@@ -67,25 +70,6 @@ const go = (url) => {
 </script>
 
 <style scoped lang="scss">
-.hero {
-  padding: 34rpx 28rpx;
-  margin-bottom: 28rpx;
-  background: linear-gradient(135deg, #0f172a, #1d4ed8);
-  color: #fff;
-}
-
-.hero-title {
-  display: block;
-  font-size: 48rpx;
-  font-weight: 800;
-  margin-bottom: 10rpx;
-}
-
-.hero-sub {
-  display: block;
-  color: rgba(255, 255, 255, 0.82);
-}
-
 .grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

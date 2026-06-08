@@ -7,12 +7,16 @@ import com.campus.platform.dto.SendMessageRequest;
 import com.campus.platform.entity.Conversation;
 import com.campus.platform.entity.ConversationMember;
 import com.campus.platform.entity.Message;
+import com.campus.platform.entity.User;
 import com.campus.platform.enums.ConversationType;
 import com.campus.platform.enums.RoleType;
 import com.campus.platform.mapper.ConversationMapper;
 import com.campus.platform.mapper.ConversationMemberMapper;
 import com.campus.platform.mapper.MessageMapper;
 import com.campus.platform.mapper.UserMapper;
+import com.campus.platform.vo.AdminConversationMemberVO;
+import com.campus.platform.vo.AdminConversationSnapshotVO;
+import com.campus.platform.vo.AdminMessageReviewVO;
 import com.campus.platform.vo.ConversationVO;
 import com.campus.platform.vo.ConversationUnreadEventVO;
 import com.campus.platform.vo.MessageNewEventVO;
@@ -39,10 +43,15 @@ public class MessageService {
 
     public List<ConversationVO> listConversations(Long userId) {
         List<ConversationMember> members =
-            conversationMemberMapper.selectList(new LambdaQueryWrapper<ConversationMember>().eq(ConversationMember::getUserId, userId));
+            conversationMemberMapper.selectList(new LambdaQueryWrapper<ConversationMember>()
+                .eq(ConversationMember::getUserId, userId)
+                .eq(ConversationMember::getHidden, false));
         return members.stream()
             .map(member -> {
                 Conversation conversation = conversationMapper.selectById(member.getConversationId());
+                if (conversation == null) {
+                    return null;
+                }
                 Message lastMessage =
                     conversation.getLastMessageId() == null ? null : messageMapper.selectById(conversation.getLastMessageId());
                 return ConversationVO.builder()
@@ -54,6 +63,7 @@ public class MessageService {
                     .updatedAt(conversation.getUpdatedAt())
                     .build();
             })
+            .filter(Objects::nonNull)
             .sorted(Comparator.comparing((ConversationVO item) ->
                 item.getUpdatedAt() == null ? (item.getLastMessage() == null ? null : item.getLastMessage().getCreatedAt()) : item.getUpdatedAt(),
                 Comparator.nullsLast(Comparator.reverseOrder())))
@@ -68,6 +78,34 @@ public class MessageService {
             .stream()
             .map(this::toVo)
             .collect(Collectors.toList());
+    }
+
+    public AdminConversationSnapshotVO adminConversationSnapshot(Long conversationId) {
+        Conversation conversation = conversationMapper.selectById(conversationId);
+        if (conversation == null) {
+            throw new BusinessException("会话不存在");
+        }
+        List<AdminConversationMemberVO> members = conversationMemberMapper.selectList(
+                new LambdaQueryWrapper<ConversationMember>()
+                    .eq(ConversationMember::getConversationId, conversationId)
+                    .orderByAsc(ConversationMember::getId))
+            .stream()
+            .map(this::toAdminMemberVo)
+            .collect(Collectors.toList());
+        List<AdminMessageReviewVO> messages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .eq(Message::getConversationId, conversationId)
+                .orderByAsc(Message::getId))
+            .stream()
+            .map(this::toAdminReviewVo)
+            .collect(Collectors.toList());
+        return AdminConversationSnapshotVO.builder()
+            .conversationId(conversation.getId())
+            .conversationType(conversation.getType())
+            .conversationTitle(conversation.getTitle())
+            .updatedAt(conversation.getUpdatedAt())
+            .members(members)
+            .messages(messages)
+            .build();
     }
 
     @Transactional
@@ -89,6 +127,7 @@ public class MessageService {
         for (ConversationMember member : members) {
             if (!Objects.equals(member.getUserId(), senderId)) {
                 member.setUnreadCount(member.getUnreadCount() + 1);
+                member.setHidden(false);
                 conversationMemberMapper.updateById(member);
                 pushMessageEvents(member.getUserId(), request.getConversationId(), toVo(message), member.getUnreadCount());
             }
@@ -126,6 +165,7 @@ public class MessageService {
             new LambdaQueryWrapper<ConversationMember>().eq(ConversationMember::getConversationId, conversationId));
         for (ConversationMember member : members) {
             member.setUnreadCount(member.getUnreadCount() + 1);
+            member.setHidden(false);
             conversationMemberMapper.updateById(member);
             pushMessageEvents(member.getUserId(), conversationId, toVo(message), member.getUnreadCount());
         }
@@ -138,6 +178,18 @@ public class MessageService {
         Conversation conversation = conversationMapper.selectById(conversationId);
         member.setUnreadCount(0);
         member.setLastReadMessageId(conversation == null ? null : conversation.getLastMessageId());
+        member.setHidden(false);
+        conversationMemberMapper.updateById(member);
+        pushUnreadEvent(userId, conversationId, 0);
+    }
+
+    @Transactional
+    public void hideConversation(Long userId, Long conversationId) {
+        ConversationMember member = ensureMember(userId, conversationId);
+        member.setHidden(true);
+        member.setUnreadCount(0);
+        Conversation conversation = conversationMapper.selectById(conversationId);
+        member.setLastReadMessageId(conversation == null ? member.getLastReadMessageId() : conversation.getLastMessageId());
         conversationMemberMapper.updateById(member);
         pushUnreadEvent(userId, conversationId, 0);
     }
@@ -168,6 +220,7 @@ public class MessageService {
         member.setConversationId(conversation.getId());
         member.setUserId(userId);
         member.setUnreadCount(0);
+        member.setHidden(false);
         conversationMemberMapper.insert(member);
         return conversation.getId();
     }
@@ -207,6 +260,35 @@ public class MessageService {
             .id(message.getId())
             .conversationId(message.getConversationId())
             .senderId(message.getSenderId())
+            .type(message.getType())
+            .content(message.getContent())
+            .createdAt(message.getCreatedAt())
+            .build();
+    }
+
+    private AdminConversationMemberVO toAdminMemberVo(ConversationMember member) {
+        User user = userMapper.selectById(member.getUserId());
+        return AdminConversationMemberVO.builder()
+            .userId(member.getUserId())
+            .nickname(user == null ? "未知用户" : user.getNickname())
+            .phone(user == null ? null : user.getPhone())
+            .avatarUrl(user == null ? null : user.getAvatarUrl())
+            .role(user == null ? null : user.getRole())
+            .status(user == null ? null : user.getStatus())
+            .unreadCount(member.getUnreadCount())
+            .joinedAt(member.getCreatedAt())
+            .build();
+    }
+
+    private AdminMessageReviewVO toAdminReviewVo(Message message) {
+        User sender = message.getSenderId() == null || message.getSenderId() <= 0 ? null : userMapper.selectById(message.getSenderId());
+        return AdminMessageReviewVO.builder()
+            .id(message.getId())
+            .conversationId(message.getConversationId())
+            .senderId(message.getSenderId())
+            .senderNickname(sender == null ? "系统通知" : sender.getNickname())
+            .senderAvatarUrl(sender == null ? null : sender.getAvatarUrl())
+            .senderRole(sender == null ? "SYSTEM" : sender.getRole())
             .type(message.getType())
             .content(message.getContent())
             .createdAt(message.getCreatedAt())

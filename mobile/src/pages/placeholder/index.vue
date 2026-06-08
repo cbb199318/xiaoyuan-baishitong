@@ -9,12 +9,18 @@
 
 <script setup>
 import { ref } from 'vue'
+import { onBackPress, onLoad } from '@dcloudio/uni-app'
+import { handleJobsMineBackPress } from '../../utils/jobsNavigation'
 
 const title = ref('功能建设中')
+let pageOptions = {}
 
 onLoad((query) => {
+  pageOptions = query || {}
   title.value = query.title || '功能建设中'
 })
+
+onBackPress(() => handleJobsMineBackPress(pageOptions))
 </script>
 
 <style scoped lang="scss">

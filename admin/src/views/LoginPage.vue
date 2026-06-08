@@ -2,7 +2,7 @@
   <div class="login-shell">
     <div class="login-card">
       <h1>校园百事通后台</h1>
-      <p>最小审核后台，用于支撑一期通用功能演示。</p>
+      <p>管理后台，支持用户、审核、举报和业务模块日常管理。</p>
       <el-form :model="form" label-position="top">
         <el-form-item label="手机号">
           <el-input v-model="form.phone" placeholder="请输入管理员手机号" />

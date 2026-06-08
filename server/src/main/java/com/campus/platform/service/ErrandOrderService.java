@@ -14,9 +14,11 @@ import com.campus.platform.entity.ConversationMember;
 import com.campus.platform.entity.ErrandOrder;
 import com.campus.platform.entity.ErrandOrderAttachment;
 import com.campus.platform.entity.ErrandOrderChat;
+import com.campus.platform.entity.ErrandRuleConfig;
 import com.campus.platform.entity.FileAsset;
 import com.campus.platform.entity.ReportTicket;
 import com.campus.platform.entity.User;
+import com.campus.platform.enums.UserStatus;
 import com.campus.platform.enums.ConversationType;
 import com.campus.platform.enums.ErrandOrderStatus;
 import com.campus.platform.enums.ErrandServiceType;
@@ -26,6 +28,7 @@ import com.campus.platform.mapper.ConversationMemberMapper;
 import com.campus.platform.mapper.ErrandOrderAttachmentMapper;
 import com.campus.platform.mapper.ErrandOrderChatMapper;
 import com.campus.platform.mapper.ErrandOrderMapper;
+import com.campus.platform.mapper.ErrandRuleConfigMapper;
 import com.campus.platform.mapper.FileAssetMapper;
 import com.campus.platform.mapper.ReportTicketMapper;
 import com.campus.platform.mapper.UserMapper;
@@ -33,11 +36,18 @@ import com.campus.platform.vo.ErrandConversationVO;
 import com.campus.platform.vo.ErrandCounterpartyVO;
 import com.campus.platform.vo.ErrandOrderVO;
 import com.campus.platform.vo.ErrandRuleVO;
+import com.campus.platform.vo.ErrandStatsItemVO;
+import com.campus.platform.vo.ErrandStatsVO;
 import com.campus.platform.vo.FileAssetVO;
 import com.campus.platform.vo.ReportVO;
+import com.campus.platform.vo.AdminConversationSnapshotVO;
+import com.campus.platform.vo.AdminErrandConversationReviewVO;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -50,9 +60,13 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ErrandOrderService {
 
+    private static final long REPORT_HANDLE_DEADLINE_HOURS = 24L;
+    private static final long ACCEPT_DEADLINE_WARNING_MINUTES = 60L;
+
     private final ErrandOrderMapper errandOrderMapper;
     private final ErrandOrderAttachmentMapper errandOrderAttachmentMapper;
     private final ErrandOrderChatMapper errandOrderChatMapper;
+    private final ErrandRuleConfigMapper errandRuleConfigMapper;
     private final ConversationMapper conversationMapper;
     private final ConversationMemberMapper conversationMemberMapper;
     private final UserMapper userMapper;
@@ -85,6 +99,10 @@ public class ErrandOrderService {
     @Transactional
     public ErrandOrderVO create(Long userId, ErrandOrderCreateRequest request) {
         validateServiceType(request.getServiceType());
+        ensureErrandAccess(userId, "当前账号已被限制使用跑腿服务");
+        validateCreateLimit(userId);
+        validateBaseFee(request.getBaseFee());
+        ErrandRuleConfig ruleConfig = getEffectiveRuleConfig();
         ErrandOrder order = new ErrandOrder();
         order.setOrderNo(generateOrderNo());
         order.setPublisherId(userId);
@@ -97,11 +115,11 @@ public class ErrandOrderService {
         order.setBaseFee(request.getBaseFee());
         order.setUrgentFlag(request.getUrgentFlag() ? 1 : 0);
         order.setFragileFlag(request.getFragileFlag() ? 1 : 0);
-        order.setUrgentFee(request.getUrgentFlag() ? appProperties.getErrand().getUrgentFee() : BigDecimal.ZERO);
-        order.setFragileFee(request.getFragileFlag() ? appProperties.getErrand().getFragileFee() : BigDecimal.ZERO);
+        order.setUrgentFee(request.getUrgentFlag() ? ruleConfig.getUrgentFee() : BigDecimal.ZERO);
+        order.setFragileFee(request.getFragileFlag() ? ruleConfig.getFragileFee() : BigDecimal.ZERO);
         order.setTotalFee(order.getBaseFee().add(order.getUrgentFee()).add(order.getFragileFee()));
         order.setStatus(ErrandOrderStatus.PUBLISHED.name());
-        order.setAcceptDeadline(LocalDateTime.now().plusHours(4));
+        order.setAcceptDeadline(LocalDateTime.now().plusHours(ruleConfig.getAutoExpireHours()));
         order.setPublicVisible(1);
         errandOrderMapper.insert(order);
 
@@ -127,8 +145,31 @@ public class ErrandOrderService {
         return toVo(order, null);
     }
 
+    public AdminErrandConversationReviewVO adminConversationReviewByOrderId(Long orderId) {
+        expireOrdersIfNeeded();
+        ErrandOrder order = getOrder(orderId);
+        Long conversationId = fetchConversationId(orderId);
+        if (conversationId == null) {
+            throw new BusinessException("当前订单暂未产生关联会话");
+        }
+        return buildAdminConversationReview(order, conversationId);
+    }
+
+    public AdminErrandConversationReviewVO adminConversationReviewByConversationId(Long conversationId) {
+        expireOrdersIfNeeded();
+        ErrandOrderChat chat = errandOrderChatMapper.selectOne(new LambdaQueryWrapper<ErrandOrderChat>()
+            .eq(ErrandOrderChat::getConversationId, conversationId));
+        if (chat == null) {
+            throw new BusinessException("当前会话未关联跑腿订单");
+        }
+        ErrandOrder order = getOrder(chat.getOrderId());
+        return buildAdminConversationReview(order, conversationId);
+    }
+
     @Transactional
     public ErrandOrderVO accept(Long orderId, Long userId) {
+        ensureErrandAccess(userId, "当前账号已被限制接单，请联系管理员处理");
+        validateAcceptLimit(userId);
         ErrandOrder order = getOrder(orderId);
         if (Objects.equals(order.getPublisherId(), userId)) {
             throw new BusinessException("不能承接自己发布的订单");
@@ -253,7 +294,7 @@ public class ErrandOrderService {
         }
     }
 
-    public Page<ErrandOrderVO> adminPage(String keyword, String status, int current, int size) {
+    public Page<ErrandOrderVO> adminPage(String keyword, String status, String serviceType, String flowState, String alertType, int current, int size) {
         expireOrdersIfNeeded();
         LambdaQueryWrapper<ErrandOrder> wrapper = new LambdaQueryWrapper<ErrandOrder>().orderByDesc(ErrandOrder::getCreatedAt);
         if (keyword != null && !keyword.isBlank()) {
@@ -273,6 +314,44 @@ public class ErrandOrderService {
         if (status != null && !status.isBlank()) {
             wrapper.eq(ErrandOrder::getStatus, status);
         }
+        if (serviceType != null && !serviceType.isBlank()) {
+            wrapper.eq(ErrandOrder::getServiceType, serviceType);
+        }
+        if (flowState != null && !flowState.isBlank()) {
+            switch (flowState.toUpperCase()) {
+                case "PUBLIC" -> wrapper
+                    .eq(ErrandOrder::getStatus, ErrandOrderStatus.PUBLISHED.name())
+                    .eq(ErrandOrder::getPublicVisible, 1);
+                case "LOCKED" -> wrapper
+                    .in(ErrandOrder::getStatus, List.of(
+                        ErrandOrderStatus.ACCEPTED.name(),
+                        ErrandOrderStatus.IN_PROGRESS.name(),
+                        ErrandOrderStatus.DELIVERING.name(),
+                        ErrandOrderStatus.DISPUTED.name()
+                    ))
+                    .eq(ErrandOrder::getPublicVisible, 0);
+                case "ARCHIVED" -> wrapper.in(ErrandOrder::getStatus, List.of(
+                    ErrandOrderStatus.COMPLETED.name(),
+                    ErrandOrderStatus.CANCELLED.name(),
+                    ErrandOrderStatus.EXPIRED.name()
+                ));
+                default -> throw new BusinessException("不支持的流转状态筛选条件");
+            }
+        }
+        if (alertType != null && !alertType.isBlank()) {
+            List<ErrandOrderVO> filtered = errandOrderMapper.selectList(wrapper).stream()
+                .map(item -> toVo(item, null))
+                .filter(item -> matchesAlertType(item, alertType))
+                .collect(Collectors.toList());
+            long total = filtered.size();
+            int start = Math.max(0, (current - 1) * size);
+            int end = Math.min(filtered.size(), start + size);
+            List<ErrandOrderVO> pageRecords = start >= end ? Collections.emptyList() : filtered.subList(start, end);
+            Page<ErrandOrderVO> result = Page.of(current, size, total);
+            result.setRecords(pageRecords);
+            return result;
+        }
+
         Page<ErrandOrder> page = errandOrderMapper.selectPage(Page.of(current, size), wrapper);
         Page<ErrandOrderVO> result = Page.of(current, size, page.getTotal());
         result.setRecords(page.getRecords().stream().map(item -> toVo(item, null)).collect(Collectors.toList()));
@@ -332,13 +411,119 @@ public class ErrandOrderService {
     }
 
     public ErrandRuleVO rules() {
-        return new ErrandRuleVO(appProperties.getErrand().getUrgentFee(), appProperties.getErrand().getFragileFee());
+        return toRuleVo(getEffectiveRuleConfig());
     }
 
-    public ErrandRuleVO updateRules(ErrandRuleUpdateRequest request) {
-        appProperties.getErrand().setUrgentFee(request.getUrgentFee());
-        appProperties.getErrand().setFragileFee(request.getFragileFee());
+    public ErrandRuleVO updateRules(Long adminId, ErrandRuleUpdateRequest request) {
+        if (request.getMaxBaseFee().compareTo(request.getMinBaseFee()) < 0) {
+            throw new BusinessException("最高基础费不能低于最低基础费");
+        }
+        ErrandRuleConfig config = getOrCreateRuleConfig();
+        config.setUrgentFee(request.getUrgentFee());
+        config.setFragileFee(request.getFragileFee());
+        config.setPublishLimitPerUser(request.getPublishLimitPerUser());
+        config.setAcceptLimitPerUser(request.getAcceptLimitPerUser());
+        config.setAutoExpireHours(request.getAutoExpireHours());
+        config.setMinBaseFee(request.getMinBaseFee());
+        config.setMaxBaseFee(request.getMaxBaseFee());
+        errandRuleConfigMapper.updateById(config);
+        syncRuntimeRuleConfig(config);
+
+        AdminOperationLog log = new AdminOperationLog();
+        log.setOperatorId(adminId);
+        log.setOperationType("ERRAND_RULE_UPDATE");
+        log.setTargetType("ERRAND_RULE");
+        log.setTargetId(config.getId());
+        log.setRemark("更新跑腿规则配置");
+        adminOperationLogMapper.insert(log);
         return rules();
+    }
+
+    public ErrandStatsVO adminStats() {
+        expireOrdersIfNeeded();
+        long totalOrders = countOrders(null);
+        long publicOrders = errandOrderMapper.selectCount(new LambdaQueryWrapper<ErrandOrder>()
+            .eq(ErrandOrder::getStatus, ErrandOrderStatus.PUBLISHED.name())
+            .eq(ErrandOrder::getPublicVisible, 1));
+        long lockedOrders = errandOrderMapper.selectCount(new LambdaQueryWrapper<ErrandOrder>()
+            .in(ErrandOrder::getStatus, List.of(
+                ErrandOrderStatus.ACCEPTED.name(),
+                ErrandOrderStatus.IN_PROGRESS.name(),
+                ErrandOrderStatus.DELIVERING.name(),
+                ErrandOrderStatus.DISPUTED.name()
+            ))
+            .eq(ErrandOrder::getPublicVisible, 0));
+        long archivedOrders = errandOrderMapper.selectCount(new LambdaQueryWrapper<ErrandOrder>()
+            .in(ErrandOrder::getStatus, List.of(
+                ErrandOrderStatus.COMPLETED.name(),
+                ErrandOrderStatus.CANCELLED.name(),
+                ErrandOrderStatus.EXPIRED.name()
+            )));
+        long acceptedOrders = countOrders(ErrandOrderStatus.ACCEPTED.name());
+        long completedOrders = countOrders(ErrandOrderStatus.COMPLETED.name());
+        long cancelledOrders = countOrders(ErrandOrderStatus.CANCELLED.name());
+        long disputedOrders = countOrders(ErrandOrderStatus.DISPUTED.name());
+        long expiredOrders = countOrders(ErrandOrderStatus.EXPIRED.name());
+        long processingReports = countErrandReportsByStatus("PROCESSING");
+        long resolvedReports = countErrandReportsByStatus("RESOLVED");
+        long rejectedReports = countErrandReportsByStatus("REJECTED");
+        long reportTotal = countErrandReportsByStatus(null);
+
+        BigDecimal grossTransactionAmount = sumOrderAmount(List.of(
+            ErrandOrderStatus.PUBLISHED.name(),
+            ErrandOrderStatus.ACCEPTED.name(),
+            ErrandOrderStatus.IN_PROGRESS.name(),
+            ErrandOrderStatus.DELIVERING.name(),
+            ErrandOrderStatus.COMPLETED.name(),
+            ErrandOrderStatus.DISPUTED.name()
+        ));
+        BigDecimal activeTransactionAmount = sumOrderAmount(List.of(
+            ErrandOrderStatus.ACCEPTED.name(),
+            ErrandOrderStatus.IN_PROGRESS.name(),
+            ErrandOrderStatus.DELIVERING.name(),
+            ErrandOrderStatus.DISPUTED.name()
+        ));
+        BigDecimal completedTransactionAmount = sumOrderAmount(List.of(ErrandOrderStatus.COMPLETED.name()));
+
+        List<ErrandStatsItemVO> statusBreakdown = new ArrayList<>();
+        for (ErrandOrderStatus item : ErrandOrderStatus.values()) {
+            statusBreakdown.add(new ErrandStatsItemVO(item.name(), countOrders(item.name())));
+        }
+
+        List<ErrandStatsItemVO> reportTypeBreakdown = reportTicketMapper.selectList(new LambdaQueryWrapper<ReportTicket>()
+                .eq(ReportTicket::getModule, "errand")
+                .orderByDesc(ReportTicket::getCreatedAt))
+            .stream()
+            .collect(Collectors.groupingBy(ReportTicket::getReportType, Collectors.counting()))
+            .entrySet()
+            .stream()
+            .map(entry -> new ErrandStatsItemVO(entry.getKey(), entry.getValue()))
+            .sorted((left, right) -> Long.compare(right.getCount(), left.getCount()))
+            .collect(Collectors.toList());
+
+        return ErrandStatsVO.builder()
+            .totalOrders(totalOrders)
+            .publicOrders(publicOrders)
+            .lockedOrders(lockedOrders)
+            .archivedOrders(archivedOrders)
+            .acceptedOrders(acceptedOrders)
+            .completedOrders(completedOrders)
+            .cancelledOrders(cancelledOrders)
+            .disputedOrders(disputedOrders)
+            .expiredOrders(expiredOrders)
+            .acceptanceRate(buildRate(acceptedOrders + completedOrders + disputedOrders, totalOrders))
+            .completionRate(buildRate(completedOrders, totalOrders))
+            .cancelRate(buildRate(cancelledOrders + expiredOrders, totalOrders))
+            .grossTransactionAmount(grossTransactionAmount)
+            .activeTransactionAmount(activeTransactionAmount)
+            .completedTransactionAmount(completedTransactionAmount)
+            .reportTotal(reportTotal)
+            .processingReports(processingReports)
+            .resolvedReports(resolvedReports)
+            .rejectedReports(rejectedReports)
+            .statusBreakdown(statusBreakdown)
+            .reportTypeBreakdown(reportTypeBreakdown)
+            .build();
     }
 
     public boolean exists(Long orderId) {
@@ -444,6 +629,24 @@ public class ErrandOrderService {
         messageService.sendConversationNotice(conversationId, message);
     }
 
+    private AdminErrandConversationReviewVO buildAdminConversationReview(ErrandOrder order, Long conversationId) {
+        AdminConversationSnapshotVO snapshot = messageService.adminConversationSnapshot(conversationId);
+        User publisher = userMapper.selectById(order.getPublisherId());
+        User runner = order.getRunnerId() == null ? null : userMapper.selectById(order.getRunnerId());
+        return AdminErrandConversationReviewVO.builder()
+            .orderId(order.getId())
+            .orderNo(order.getOrderNo())
+            .orderStatus(order.getStatus())
+            .conversationId(snapshot.getConversationId())
+            .conversationType(snapshot.getConversationType())
+            .conversationTitle(snapshot.getConversationTitle())
+            .publisher(toCounterparty(publisher))
+            .runner(toCounterparty(runner))
+            .members(snapshot.getMembers())
+            .messages(snapshot.getMessages())
+            .build();
+    }
+
     private ErrandOrderVO toVo(ErrandOrder order, Long currentUserId) {
         return toVo(order, currentUserId, fetchConversationId(order.getId()));
     }
@@ -451,6 +654,14 @@ public class ErrandOrderService {
     private ErrandOrderVO toVo(ErrandOrder order, Long currentUserId, Long conversationId) {
         User publisher = userMapper.selectById(order.getPublisherId());
         User runner = order.getRunnerId() == null ? null : userMapper.selectById(order.getRunnerId());
+        List<ReportVO> relatedReports = listRelatedReports(order.getId());
+        List<String> riskTags = buildRiskTags(order, relatedReports);
+        int activeReportCount = (int) relatedReports.stream()
+            .filter(report -> "PENDING".equalsIgnoreCase(report.getStatus()) || "PROCESSING".equalsIgnoreCase(report.getStatus()))
+            .count();
+        int overdueReportCount = (int) relatedReports.stream()
+            .filter(report -> Boolean.TRUE.equals(report.getIsOverdue()))
+            .count();
         return ErrandOrderVO.builder()
             .id(order.getId())
             .orderNo(order.getOrderNo())
@@ -478,7 +689,10 @@ public class ErrandOrderService {
             .publisher(toCounterparty(publisher))
             .runner(toCounterparty(runner))
             .attachments(listAttachments(order.getId()))
-            .relatedReports(listRelatedReports(order.getId()))
+            .relatedReports(relatedReports)
+            .activeReportCount(activeReportCount)
+            .overdueReportCount(overdueReportCount)
+            .riskTags(riskTags)
             .conversationId(conversationId)
             .canAccept(currentUserId != null && !Objects.equals(order.getPublisherId(), currentUserId)
                 && ErrandOrderStatus.PUBLISHED.name().equals(order.getStatus()) && order.getRunnerId() == null)
@@ -536,20 +750,222 @@ public class ErrandOrderService {
                 .eq(ReportTicket::getTargetId, orderId)
                 .orderByDesc(ReportTicket::getCreatedAt))
             .stream()
-            .map(report -> ReportVO.builder()
-                .id(report.getId())
-                .module(report.getModule())
-                .targetType(report.getTargetType())
-                .targetId(report.getTargetId())
-                .reportType(report.getReportType())
-                .description(report.getDescription())
-                .contactPhone(report.getContactPhone())
-                .status(report.getStatus())
-                .handleRemark(report.getHandleRemark())
-                .handledBy(report.getHandledBy())
-                .handledAt(report.getHandledAt())
-                .createdAt(report.getCreatedAt())
-                .build())
+            .map(this::toRelatedReportVo)
             .collect(Collectors.toList());
+    }
+
+    private ReportVO toRelatedReportVo(ReportTicket report) {
+        LocalDateTime deadlineAt = report.getCreatedAt() == null ? null : report.getCreatedAt().plusHours(REPORT_HANDLE_DEADLINE_HOURS);
+        LocalDateTime referenceTime = report.getHandledAt() != null ? report.getHandledAt() : LocalDateTime.now();
+        Long remainingMinutes = deadlineAt == null ? null : ChronoUnit.MINUTES.between(referenceTime, deadlineAt);
+        Boolean isOverdue = remainingMinutes == null ? null : remainingMinutes < 0;
+        return ReportVO.builder()
+            .id(report.getId())
+            .module(report.getModule())
+            .targetType(report.getTargetType())
+            .targetId(report.getTargetId())
+            .reportType(report.getReportType())
+            .description(report.getDescription())
+            .contactPhone(report.getContactPhone())
+            .status(report.getStatus())
+            .handleRemark(report.getHandleRemark())
+            .handledBy(report.getHandledBy())
+            .handledAt(report.getHandledAt())
+            .deadlineAt(deadlineAt)
+            .isOverdue(isOverdue)
+            .remainingMinutes(remainingMinutes)
+            .createdAt(report.getCreatedAt())
+            .build();
+    }
+
+    private List<String> buildRiskTags(ErrandOrder order, List<ReportVO> relatedReports) {
+        List<String> tags = new ArrayList<>();
+        String status = String.valueOf(order.getStatus()).toUpperCase();
+        LocalDateTime now = LocalDateTime.now();
+        if ("DISPUTED".equals(status)) {
+            tags.add("争议中");
+        }
+        if ("PUBLISHED".equals(status) && order.getAcceptDeadline() != null) {
+            long minutes = ChronoUnit.MINUTES.between(now, order.getAcceptDeadline());
+            if (minutes >= 0 && minutes <= ACCEPT_DEADLINE_WARNING_MINUTES) {
+                tags.add("临近接单超时");
+            }
+        }
+        if ("EXPIRED".equals(status)) {
+            tags.add("超时未接单");
+        }
+        boolean hasActiveReports = relatedReports.stream()
+            .anyMatch(report -> "PENDING".equalsIgnoreCase(report.getStatus()) || "PROCESSING".equalsIgnoreCase(report.getStatus()));
+        if (hasActiveReports) {
+            tags.add("举报待处理");
+        }
+        boolean hasOverdueReports = relatedReports.stream().anyMatch(report -> Boolean.TRUE.equals(report.getIsOverdue()));
+        if (hasOverdueReports) {
+            tags.add("举报已超时");
+        }
+        return tags;
+    }
+
+    private boolean matchesAlertType(ErrandOrderVO order, String alertType) {
+        return switch (String.valueOf(alertType).toUpperCase()) {
+            case "DISPUTED" -> order.getRiskTags() != null && order.getRiskTags().contains("争议中");
+            case "EXPIRING_ACCEPT" -> order.getRiskTags() != null && order.getRiskTags().contains("临近接单超时");
+            case "EXPIRED_UNACCEPTED" -> order.getRiskTags() != null && order.getRiskTags().contains("超时未接单");
+            case "REPORT_PENDING" -> order.getRiskTags() != null && order.getRiskTags().contains("举报待处理");
+            case "REPORT_OVERDUE" -> order.getRiskTags() != null && order.getRiskTags().contains("举报已超时");
+            default -> true;
+        };
+    }
+
+    private void ensureErrandAccess(Long userId, String blockedMessage) {
+        User user = userMapper.selectById(userId);
+        if (user == null || !UserStatus.canUseErrand(user.getStatus())) {
+            throw new BusinessException(403, blockedMessage);
+        }
+    }
+
+    private void validateCreateLimit(Long userId) {
+        Integer limit = getEffectiveRuleConfig().getPublishLimitPerUser();
+        if (limit == null || limit <= 0) {
+            return;
+        }
+        Long current = errandOrderMapper.selectCount(new LambdaQueryWrapper<ErrandOrder>()
+            .eq(ErrandOrder::getPublisherId, userId)
+            .in(ErrandOrder::getStatus, List.of(
+                ErrandOrderStatus.PUBLISHED.name(),
+                ErrandOrderStatus.ACCEPTED.name(),
+                ErrandOrderStatus.IN_PROGRESS.name(),
+                ErrandOrderStatus.DELIVERING.name(),
+                ErrandOrderStatus.DISPUTED.name()
+            )));
+        if (current != null && current >= limit) {
+            throw new BusinessException("当前发单进行中数量已达上限，请先处理已有订单");
+        }
+    }
+
+    private void validateAcceptLimit(Long userId) {
+        Integer limit = getEffectiveRuleConfig().getAcceptLimitPerUser();
+        if (limit == null || limit <= 0) {
+            return;
+        }
+        Long current = errandOrderMapper.selectCount(new LambdaQueryWrapper<ErrandOrder>()
+            .eq(ErrandOrder::getRunnerId, userId)
+            .in(ErrandOrder::getStatus, List.of(
+                ErrandOrderStatus.ACCEPTED.name(),
+                ErrandOrderStatus.IN_PROGRESS.name(),
+                ErrandOrderStatus.DELIVERING.name(),
+                ErrandOrderStatus.DISPUTED.name()
+            )));
+        if (current != null && current >= limit) {
+            throw new BusinessException("当前接单进行中数量已达上限，请先完成或处理现有订单");
+        }
+    }
+
+    private void validateBaseFee(BigDecimal baseFee) {
+        if (baseFee == null) {
+            throw new BusinessException("基础费用不能为空");
+        }
+        ErrandRuleConfig config = getEffectiveRuleConfig();
+        BigDecimal min = config.getMinBaseFee();
+        BigDecimal max = config.getMaxBaseFee();
+        if (min != null && baseFee.compareTo(min) < 0) {
+            throw new BusinessException("基础费用不能低于平台最低限额");
+        }
+        if (max != null && baseFee.compareTo(max) > 0) {
+            throw new BusinessException("基础费用不能高于平台最高限额");
+        }
+    }
+
+    private long countOrders(String status) {
+        return errandOrderMapper.selectCount(
+            status == null
+                ? new LambdaQueryWrapper<>()
+                : new LambdaQueryWrapper<ErrandOrder>().eq(ErrandOrder::getStatus, status)
+        );
+    }
+
+    private long countErrandReportsByStatus(String status) {
+        LambdaQueryWrapper<ReportTicket> wrapper = new LambdaQueryWrapper<ReportTicket>()
+            .eq(ReportTicket::getModule, "errand");
+        if (status != null && !status.isBlank()) {
+            wrapper.eq(ReportTicket::getStatus, status);
+        }
+        return reportTicketMapper.selectCount(wrapper);
+    }
+
+    private BigDecimal sumOrderAmount(List<String> statuses) {
+        return errandOrderMapper.selectList(new LambdaQueryWrapper<ErrandOrder>().in(ErrandOrder::getStatus, statuses))
+            .stream()
+            .map(ErrandOrder::getTotalFee)
+            .filter(Objects::nonNull)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal buildRate(long numerator, long denominator) {
+        if (denominator <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return BigDecimal.valueOf(numerator)
+            .multiply(BigDecimal.valueOf(100))
+            .divide(BigDecimal.valueOf(denominator), 2, RoundingMode.HALF_UP);
+    }
+
+    private ErrandRuleConfig getEffectiveRuleConfig() {
+        ErrandRuleConfig config = errandRuleConfigMapper.selectOne(
+            new LambdaQueryWrapper<ErrandRuleConfig>().eq(ErrandRuleConfig::getConfigKey, "default")
+        );
+        if (config != null) {
+            syncRuntimeRuleConfig(config);
+            return config;
+        }
+        return buildFallbackRuleConfig();
+    }
+
+    private ErrandRuleConfig getOrCreateRuleConfig() {
+        ErrandRuleConfig config = errandRuleConfigMapper.selectOne(
+            new LambdaQueryWrapper<ErrandRuleConfig>().eq(ErrandRuleConfig::getConfigKey, "default")
+        );
+        if (config != null) {
+            return config;
+        }
+        config = buildFallbackRuleConfig();
+        config.setConfigKey("default");
+        errandRuleConfigMapper.insert(config);
+        return config;
+    }
+
+    private ErrandRuleConfig buildFallbackRuleConfig() {
+        ErrandRuleConfig config = new ErrandRuleConfig();
+        config.setConfigKey("default");
+        config.setUrgentFee(appProperties.getErrand().getUrgentFee());
+        config.setFragileFee(appProperties.getErrand().getFragileFee());
+        config.setPublishLimitPerUser(appProperties.getErrand().getPublishLimitPerUser());
+        config.setAcceptLimitPerUser(appProperties.getErrand().getAcceptLimitPerUser());
+        config.setAutoExpireHours(appProperties.getErrand().getAutoExpireHours());
+        config.setMinBaseFee(appProperties.getErrand().getMinBaseFee());
+        config.setMaxBaseFee(appProperties.getErrand().getMaxBaseFee());
+        return config;
+    }
+
+    private void syncRuntimeRuleConfig(ErrandRuleConfig config) {
+        appProperties.getErrand().setUrgentFee(config.getUrgentFee());
+        appProperties.getErrand().setFragileFee(config.getFragileFee());
+        appProperties.getErrand().setPublishLimitPerUser(config.getPublishLimitPerUser());
+        appProperties.getErrand().setAcceptLimitPerUser(config.getAcceptLimitPerUser());
+        appProperties.getErrand().setAutoExpireHours(config.getAutoExpireHours());
+        appProperties.getErrand().setMinBaseFee(config.getMinBaseFee());
+        appProperties.getErrand().setMaxBaseFee(config.getMaxBaseFee());
+    }
+
+    private ErrandRuleVO toRuleVo(ErrandRuleConfig config) {
+        return new ErrandRuleVO(
+            config.getUrgentFee(),
+            config.getFragileFee(),
+            config.getPublishLimitPerUser(),
+            config.getAcceptLimitPerUser(),
+            config.getAutoExpireHours(),
+            config.getMinBaseFee(),
+            config.getMaxBaseFee()
+        );
     }
 }

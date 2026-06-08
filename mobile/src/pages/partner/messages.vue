@@ -68,21 +68,27 @@ const refreshTick = ref('')
 const showReportModal = ref(false)
 const activeReportTargetId = ref('')
 
-const buildList = () => {
+const buildList = async () => {
   if (!store.profile) {
     return
   }
-  refreshTick.value = getPartnerChatRefreshTick()
-  const currentUserId = store.profile.userId
-  list.value = getPartnerConversations(currentUserId).map((item) => {
-    const isPublisher = item.publisherId === currentUserId
-    return {
-      ...item,
-      counterpartyName: isPublisher ? item.applicantName : item.publisherName,
-      counterpartyAvatarColor: isPublisher ? item.applicantAvatarColor : item.publisherAvatarColor,
-      counterpartyTags: getPartnerProfileTags(isPublisher ? item.applicantId : item.publisherId).slice(0, 3),
-    }
-  })
+  try {
+    refreshTick.value = getPartnerChatRefreshTick()
+    const currentUserId = store.profile.userId
+    const conversations = await getPartnerConversations(currentUserId)
+    list.value = conversations.map((item) => {
+      const isPublisher = item.publisherId === currentUserId
+      const targetUserId = isPublisher ? item.applicantId : item.publisherId
+      return {
+        ...item,
+        counterpartyName: isPublisher ? item.applicantName : item.publisherName,
+        counterpartyAvatarColor: isPublisher ? '#2563eb' : '#0ea5e9',
+        counterpartyTags: getPartnerProfileTags(targetUserId).slice(0, 3),
+      }
+    })
+  } catch (error) {
+    list.value = []
+  }
 }
 
 const openChat = (item) => {
@@ -92,14 +98,14 @@ const openChat = (item) => {
 const removeConversation = (item) => {
   uni.showModal({
     title: '删除会话',
-    content: '删除后只会清除当前本地会话记录，是否继续？',
-    success: (result) => {
+    content: '当前版本暂不支持删除会话，你仍可通过举报入口反馈问题。',
+    showCancel: false,
+    success: async (result) => {
       if (!result.confirm) {
         return
       }
-      deletePartnerConversation(item.id)
-      buildList()
-      uni.showToast({ title: '会话已删除', icon: 'success' })
+      await deletePartnerConversation(item.id)
+      await buildList()
     },
   })
 }
@@ -112,20 +118,22 @@ const openReportEntry = () => {
 const goBack = () => {
   uni.navigateBack({
     fail: () => {
-      uni.navigateTo({ url: '/pages/partner/index' })
+      uni.redirectTo({ url: '/pages/partner/index' })
     },
   })
 }
 
 const formatTime = (value) => (value ? value.replace('T', ' ').slice(0, 16) : '')
 
-watch(() => store.messageEventTick, buildList)
+watch(() => store.messageEventTick, () => {
+  buildList()
+})
 
 onShow(async () => {
   if (!store.profile) {
     await store.fetchProfile()
   }
-  buildList()
+  await buildList()
 })
 </script>
 

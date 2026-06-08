@@ -22,4 +22,7 @@ public class ProfileUpdateRequest {
 
     @Size(max = 255)
     private String bio;
+
+    @Size(max = 20)
+    private String publishRole;
 }

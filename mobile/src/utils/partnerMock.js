@@ -33,6 +33,10 @@ export const partnerStorageKeys = {
   profileTags: 'partner-profile-tags',
 }
 
+const partnerDemoUserPhone = '18800000001'
+const partnerDemoUserId = 14
+const partnerDemoDemandId = 7101
+
 const partnerUserProfileBaseMap = {
   900101: { phone: '13800001001', bio: '理工科自习搭子，擅长做题和整理复习节奏。' },
   900102: { phone: '13800001002', bio: '喜欢边干饭边聊天，熟悉学校食堂和周边小店。' },
@@ -40,6 +44,7 @@ const partnerUserProfileBaseMap = {
   900104: { phone: '13800001004', bio: '周末经常出行，时间观念强，擅长拼车规划。' },
   900105: { phone: '13800001005', bio: '甜品和探店爱好者，喜欢拍照和记录校园生活。' },
   900106: { phone: '13800001006', bio: '英语口语慢热型选手，适合轻松交流互练。' },
+  930201: { phone: '13800003001', bio: '平时爱泡图书馆，擅长梳理知识点，沟通耐心。' },
 }
 
 export const partnerPresetTags = [
@@ -151,18 +156,90 @@ const normalizeDemand = (item) => ({
   ...item,
 })
 
-export const readPublishedPartnerList = () => {
-  const raw = uni.getStorageSync(partnerStorageKeys.published) || '[]'
+const safeParse = (raw, fallback) => {
   try {
-    const list = JSON.parse(raw)
-    return Array.isArray(list) ? list.map(normalizeDemand) : []
+    const parsed = JSON.parse(raw)
+    return parsed ?? fallback
   } catch (error) {
-    return []
+    return fallback
   }
 }
 
+const getCurrentProfile = () => {
+  const profileRaw = uni.getStorageSync('user-info')
+  return typeof profileRaw === 'string' ? safeParse(profileRaw, null) : profileRaw
+}
+
+const shouldUsePartnerDemoData = (profile = getCurrentProfile(), userId) => {
+  const currentUserId = Number(userId || profile?.userId || 0)
+  return currentUserId === partnerDemoUserId || String(profile?.phone || '') === partnerDemoUserPhone
+}
+
+export const readPublishedPartnerList = () => {
+  const raw = uni.getStorageSync(partnerStorageKeys.published) || '[]'
+  const list = safeParse(raw, [])
+  return Array.isArray(list) ? list.map(normalizeDemand) : []
+}
+
+const readProfileTagMap = () => {
+  const raw = uni.getStorageSync(partnerStorageKeys.profileTags) || '{}'
+  const map = safeParse(raw, {})
+  return typeof map === 'object' && map ? map : {}
+}
+
+const writeProfileTagMap = (map) => {
+  uni.setStorageSync(partnerStorageKeys.profileTags, JSON.stringify(map))
+}
+
+const touchRefreshTick = () => {
+  uni.setStorageSync(partnerStorageKeys.refreshTick, String(Date.now()))
+}
+
+const ensurePartnerDemoData = (userId) => {
+  const profile = getCurrentProfile()
+  if (!shouldUsePartnerDemoData(profile, userId)) {
+    return
+  }
+  const currentUserId = Number(userId || profile?.userId || partnerDemoUserId)
+  const publishedList = readPublishedPartnerList()
+  const hasDemoDemand = publishedList.some((item) => Number(item.id) === partnerDemoDemandId)
+  if (!hasDemoDemand) {
+    publishedList.unshift(normalizeDemand({
+      id: partnerDemoDemandId,
+      publisherId: currentUserId,
+      type: 'STUDY',
+      timeText: '本周五 晚上 18:00 - 20:00',
+      location: '教学楼 A302 复习角',
+      needTags: ['期末冲刺', '互相监督'],
+      userTags: ['耐心靠谱', '擅长学习'],
+      description: '想找一位一起整理重点和刷题的学习搭子，主要复习专业课和期末知识框架。',
+      remainingSlots: 2,
+      totalSlots: 2,
+      nickname: profile?.nickname || '默认演示用户',
+      createdAt: '2026-06-03T19:20:00',
+      updatedAt: '2026-06-03T19:20:00',
+      matchScore: 100,
+    }))
+    uni.setStorageSync(partnerStorageKeys.published, JSON.stringify(publishedList))
+  }
+
+  const profileTagMap = readProfileTagMap()
+  if (!Array.isArray(profileTagMap[String(currentUserId)]) || !profileTagMap[String(currentUserId)].length) {
+    profileTagMap[String(currentUserId)] = ['性格开朗', '擅长学习', '耐心靠谱']
+    writeProfileTagMap(profileTagMap)
+  }
+
+  const appliedKey = `partner-applied-${currentUserId}`
+  const appliedIds = safeParse(uni.getStorageSync(appliedKey) || '[]', [])
+  if (Array.isArray(appliedIds) && !appliedIds.includes(2)) {
+    uni.setStorageSync(appliedKey, JSON.stringify([...appliedIds, 2]))
+  }
+
+  touchRefreshTick()
+}
+
 export const getAllPartnerDemands = () =>
-  [...readPublishedPartnerList(), ...partnerBaseList.map(normalizeDemand)]
+  (ensurePartnerDemoData(), [...readPublishedPartnerList(), ...partnerBaseList.map(normalizeDemand)])
     .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
 
 export const getPartnerMockList = () =>
@@ -176,14 +253,7 @@ export const getPartnerUserProfile = (userId) => {
     return null
   }
   const demand = getAllPartnerDemands().find((item) => Number(item.publisherId || 0) === Number(userId))
-  const profileRaw = uni.getStorageSync('user-info')
-  const localProfile = typeof profileRaw === 'string' ? (() => {
-    try {
-      return JSON.parse(profileRaw)
-    } catch (error) {
-      return null
-    }
-  })() : profileRaw
+  const localProfile = getCurrentProfile()
 
   const isSelf = Number(localProfile?.userId || 0) === Number(userId)
   const source = isSelf
@@ -208,10 +278,6 @@ export const getPartnerUserProfile = (userId) => {
     demandCount: publishedList.length,
     activeDemandCount: publishedList.filter((item) => item.status !== 'OFFLINE').length,
   }
-}
-
-const touchRefreshTick = () => {
-  uni.setStorageSync(partnerStorageKeys.refreshTick, String(Date.now()))
 }
 
 export const savePublishedPartner = (payload) => {
@@ -242,16 +308,6 @@ export const updatePartnerDemandStatus = (id, status) => {
   uni.setStorageSync(partnerStorageKeys.published, JSON.stringify(nextList))
   touchRefreshTick()
   return nextList
-}
-
-const readProfileTagMap = () => {
-  const raw = uni.getStorageSync(partnerStorageKeys.profileTags) || '{}'
-  try {
-    const map = JSON.parse(raw)
-    return typeof map === 'object' && map ? map : {}
-  } catch (error) {
-    return {}
-  }
 }
 
 export const getPartnerProfileTags = (userId) => {

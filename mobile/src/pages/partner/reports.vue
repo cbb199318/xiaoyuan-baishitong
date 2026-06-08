@@ -94,7 +94,7 @@ const previewAttachment = (attachments, current) => {
 const goBack = () => {
   uni.navigateBack({
     fail: () => {
-      uni.navigateTo({ url: '/pages/partner/mine' })
+      uni.redirectTo({ url: '/pages/partner/mine' })
     },
   })
 }

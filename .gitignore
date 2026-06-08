@@ -32,3 +32,4 @@ storage/
 # Local temp / archives
 *.zip
 tmp-upload.png
+tmp/

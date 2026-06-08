@@ -123,12 +123,11 @@ import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { useUserStore } from '../../stores/user'
 import {
-  getPartnerDemandById,
   partnerCategoryMap,
   partnerPublishCategoryOptions,
   partnerTimeSlotOptions,
-  savePublishedPartner,
 } from '../../utils/partnerMock'
+import { createPartnerDemand, getPartnerDemandDetail, updatePartnerDemand } from '../../utils/partnerApi'
 
 const store = useUserStore()
 const showErrors = ref(false)
@@ -234,37 +233,30 @@ const fillForm = (detail) => {
 }
 
 const buildPartnerPayload = () => {
-  const now = Date.now()
-  const userId = store.profile?.userId || 'guest'
-  const nickname = store.profile?.nickname || '新同学'
-  const totalSlots = Number(form.totalSlots)
-  const currentDetail = isEditMode.value ? getPartnerDemandById(editDemandId.value) : null
   return {
-    id: currentDetail?.id || now,
     type: form.type,
-    timeText: `${form.date} ${form.timeSlot}`,
+    schedule: `${form.date} ${form.timeSlot}`,
     location: form.location,
     needTags: [...form.needTags],
-    userTags: currentDetail?.userTags || ['新发布', '待匹配'],
     description: form.description,
-    remainingSlots: currentDetail?.remainingSlots || totalSlots,
-    totalSlots,
-    nickname,
-    createdAt: currentDetail?.createdAt || new Date(now).toISOString(),
-    updatedAt: new Date(now).toISOString(),
-    matchScore: currentDetail?.matchScore || 100,
-    publisherId: userId,
-    status: currentDetail?.status || 'ACTIVE',
   }
 }
 
-const submitForm = () => {
+const submitForm = async () => {
   showErrors.value = true
   if (!canSubmit.value) {
     uni.showToast({ title: '请完善必填信息', icon: 'none' })
     return
   }
-  savePublishedPartner(buildPartnerPayload())
+  try {
+    if (isEditMode.value) {
+      await updatePartnerDemand(editDemandId.value, buildPartnerPayload())
+    } else {
+      await createPartnerDemand(buildPartnerPayload())
+    }
+  } catch (error) {
+    return
+  }
   uni.showToast({ title: isEditMode.value ? '需求已更新' : `${partnerCategoryMap[form.type]}已发布`, icon: 'success' })
   setTimeout(() => {
     uni.$emit('partner-published')
@@ -275,19 +267,24 @@ const submitForm = () => {
 const goBack = () => {
   uni.navigateBack({
     fail: () => {
-      uni.navigateTo({ url: '/pages/partner/index' })
+      uni.redirectTo({ url: '/pages/partner/index' })
     },
   })
 }
 
-onLoad((options) => {
+onLoad(async (options) => {
   const demandId = options?.id || ''
   if (!demandId) {
     resetForm()
     return
   }
   editDemandId.value = demandId
-  fillForm(getPartnerDemandById(demandId))
+  try {
+    const detail = await getPartnerDemandDetail(demandId)
+    fillForm(detail)
+  } catch (error) {
+    uni.showToast({ title: '需求详情加载失败', icon: 'none' })
+  }
 })
 </script>
 

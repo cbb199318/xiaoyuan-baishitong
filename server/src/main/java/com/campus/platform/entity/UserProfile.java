@@ -18,5 +18,5 @@ public class UserProfile extends BaseEntity {
     private String gender;
     private String contactPhone;
     private String bio;
+    private String publishRole;
 }
-
