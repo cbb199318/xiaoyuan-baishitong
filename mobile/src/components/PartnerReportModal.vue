@@ -129,6 +129,10 @@ const submit = async () => {
     uni.showToast({ title: '请补充违规类型和描述', icon: 'none' })
     return
   }
+  if (!props.targetId && props.targetId !== 0) {
+    uni.showToast({ title: '请先选择具体举报对象', icon: 'none' })
+    return
+  }
   await request.post('/reports', {
     module: props.module,
     targetType: props.targetType,

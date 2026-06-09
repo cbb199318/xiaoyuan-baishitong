@@ -62,8 +62,8 @@
     <PartnerReportModal
       v-model:visible="showReportModal"
       module="partner"
-      target-type="conversation"
-      :target-id="detail?.id || conversationId"
+      target-type="user"
+      :target-id="reportTargetUserId"
     />
   </view>
 </template>
@@ -91,6 +91,14 @@ const showReportModal = ref(false)
 
 const currentUserId = computed(() => store.profile?.userId || null)
 const messages = computed(() => detail.value?.messages || [])
+const reportTargetUserId = computed(() => {
+  if (!detail.value || !currentUserId.value) {
+    return ''
+  }
+  return detail.value.publisherId === currentUserId.value
+    ? detail.value.applicantId
+    : detail.value.publisherId
+})
 const counterpartyTags = computed(() => {
   if (!detail.value || !currentUserId.value) {
     return []

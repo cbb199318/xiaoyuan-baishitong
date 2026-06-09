@@ -25,7 +25,10 @@
           <view class="partner-message-main">
             <view class="partner-message-head">
               <text class="partner-message-name">{{ item.counterpartyName }}</text>
-              <text class="partner-message-time">{{ formatTime(item.updatedAt) }}</text>
+              <view class="partner-message-head-actions">
+                <text class="partner-message-time">{{ formatTime(item.updatedAt) }}</text>
+                <text class="partner-message-report" @click.stop="openReportEntry(item)">举报</text>
+              </view>
             </view>
             <text class="partner-message-summary">{{ item.demandTitle }}</text>
             <view v-if="item.counterpartyTags?.length" class="counterparty-tags">
@@ -48,7 +51,7 @@
     <PartnerReportModal
       v-model:visible="showReportModal"
       module="partner"
-      target-type="conversation"
+      target-type="user"
       :target-id="activeReportTargetId"
     />
   </view>
@@ -81,6 +84,7 @@ const buildList = async () => {
       const targetUserId = isPublisher ? item.applicantId : item.publisherId
       return {
         ...item,
+        reportTargetUserId: targetUserId,
         counterpartyName: isPublisher ? item.applicantName : item.publisherName,
         counterpartyAvatarColor: isPublisher ? '#2563eb' : '#0ea5e9',
         counterpartyTags: getPartnerProfileTags(targetUserId).slice(0, 3),
@@ -110,9 +114,37 @@ const removeConversation = (item) => {
   })
 }
 
-const openReportEntry = () => {
-  activeReportTargetId.value = ''
-  showReportModal.value = true
+const openReportEntry = (targetItem) => {
+  if (targetItem?.reportTargetUserId) {
+    activeReportTargetId.value = targetItem.reportTargetUserId
+    showReportModal.value = true
+    return
+  }
+  if (!list.value.length) {
+    uni.showToast({ title: '暂无可举报会话', icon: 'none' })
+    return
+  }
+  if (list.value.length === 1) {
+    activeReportTargetId.value = list.value[0].reportTargetUserId || ''
+    if (!activeReportTargetId.value) {
+      uni.showToast({ title: '请选择具体会话后再举报', icon: 'none' })
+      return
+    }
+    showReportModal.value = true
+    return
+  }
+  uni.showActionSheet({
+    itemList: list.value.map((item) => `${item.counterpartyName}｜${item.demandTitle || '搭子会话'}`),
+    success: ({ tapIndex }) => {
+      const selected = list.value[tapIndex]
+      if (!selected?.reportTargetUserId) {
+        uni.showToast({ title: '请选择具体会话后再举报', icon: 'none' })
+        return
+      }
+      activeReportTargetId.value = selected.reportTargetUserId
+      showReportModal.value = true
+    },
+  })
 }
 
 const goBack = () => {
@@ -236,10 +268,22 @@ onShow(async () => {
   gap: 12rpx;
 }
 
+.partner-message-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  flex-shrink: 0;
+}
+
 .partner-message-name {
   font-size: 28rpx;
   font-weight: 700;
   color: #0f172a;
+}
+
+.partner-message-report {
+  font-size: 22rpx;
+  color: #ef4444;
 }
 
 .partner-message-time {
